@@ -1,0 +1,8 @@
+test_*
+work
+known_species.csv
+projects.csv
+.nextflow*
+dev-config.json
+*.egg-info
+*.pyc
