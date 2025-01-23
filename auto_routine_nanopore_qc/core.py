@@ -23,7 +23,7 @@ def find_run_dirs(config, check_symlinks_complete=True):
     """
     fastq_by_run_dir = config['fastq_by_run_dir']
     gridion_run_id_regex    = "\d{8}_\d{4}_X\d_[A-Z0-9]{8}_[a-z0-9]{8}$"
-    promethion_run_id_regex = "\d{8}_\d{4}_P2S_\d+-\d_[A-Z0-9]{8}_[a-z0-9]{8}$"
+    promethion_run_id_regex = "\d{8}_\d{4}_P2S_\d+-\w_[A-Z0-9]{8}_[a-z0-9]{8}$"
 
     subdirs = os.scandir(fastq_by_run_dir)
 
