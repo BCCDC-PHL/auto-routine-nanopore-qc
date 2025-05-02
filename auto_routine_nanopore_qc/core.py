@@ -22,8 +22,8 @@ def find_run_dirs(config, check_symlinks_complete=True):
     :rtype: Iterator[Optional[dict[str, str]]]
     """
     fastq_by_run_dir = config['fastq_by_run_dir']
-    gridion_run_id_regex    = "\d{8}_\d{4}_X\d_[A-Z0-9]{8}_[a-z0-9]{8}$"
-    promethion_run_id_regex = "\d{8}_\d{4}_P2S_\d+-\w_[A-Z0-9]{8}_[a-z0-9]{8}$"
+    gridion_run_id_regex    = "\\d{8}_\\d{4}_X\\d_[A-Z0-9]{8}_[a-z0-9]{8}$"
+    promethion_run_id_regex = "\\d{8}_\\d{4}_P2S_\\d+-\\w_[A-Z0-9]{8}_[a-z0-9]{8}$"
 
     subdirs = os.scandir(fastq_by_run_dir)
 
@@ -132,7 +132,7 @@ def analyze_run(config, run):
 
         try:
             timestamp_analysis_start = datetime.datetime.now().isoformat()
-            subprocess.run(pipeline_command, capture_output=True, check=True)
+            subprocess.run(pipeline_command, capture_output=True, check=True, cwd=analysis_work_dir)
             timestamp_analysis_complete = datetime.datetime.now().isoformat()
             analysis_complete_path = os.path.join(analysis_output_dir, 'analysis_complete.json')
             analysis_complete = {
