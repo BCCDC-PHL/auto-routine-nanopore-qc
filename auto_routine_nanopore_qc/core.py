@@ -131,6 +131,7 @@ def analyze_run(config, run):
         logging.info(json.dumps({"event_type": "analysis_started", "sequencing_run_id": analysis_run_id, "pipeline_command": " ".join(pipeline_command)}))
 
         try:
+            os.makedirs(analysis_work_dir, exist_ok=True)
             timestamp_analysis_start = datetime.datetime.now().isoformat()
             subprocess.run(pipeline_command, capture_output=True, check=True, cwd=analysis_work_dir)
             timestamp_analysis_complete = datetime.datetime.now().isoformat()
