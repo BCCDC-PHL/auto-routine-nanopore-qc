@@ -10,71 +10,88 @@ import time
 import auto_routine_nanopore_qc.config
 import auto_routine_nanopore_qc.core as core
 
+from auto_routine_nanopore_qc.config import load_config
+from auto_routine_nanopore_qc.logging_config import configure_logging
+from auto_routine_nanopore_qc.model import Config, CustomJSONEncoder
+
+from dataclasses import asdict
+
 DEFAULT_SCAN_INTERVAL_SECONDS = 3600.0
+
+log = logging.getLogger(__name__)
+
+def reload_config(config_path: os.PathLike, current_config: Config) -> Config:
+    """
+    Reload the config file, so that changes take effect without restarting.
+    If the config can't be loaded, continue with the last valid config.
+
+    :param config_path: Path to the config file.
+    :param current_config: The last valid config.
+    :return: The reloaded config, or the current config if reloading failed.
+    """
+    try:
+        config = load_config(config_path)
+        log.info({"event_type": "config_loaded", "config_file": os.path.abspath(config_path)})
+        return config
+    except Exception as e:
+        log.error({"event_type": "load_config_failed", "config_file": os.path.abspath(config_path), "error": str(e)})
+        return current_config
+
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config')
-    parser.add_argument('--log-level')
+    parser.add_argument('-c', '--config', required=True)
+    parser.add_argument('--log-level', default='info', choices=['debug', 'info', 'warning', 'error'])
+    parser.add_argument('--log-file', help='Append logs to this file, rotated daily at midnight (default: log to stdout)')
+    parser.add_argument('--log-retention-days', type=int, default=90, help='Number of rotated log files to keep. 0 keeps all of them (default: 90)')
     args = parser.parse_args()
 
-    config = {}
+    configure_logging(args.log_level, args.log_file, args.log_retention_days)
+    log.debug({"event_type": "debug_logging_enabled"})
+
+    # Fail fast if the config is invalid at startup.
+    config = load_config(args.config)
+    log.info({
+        "event_type": "config_loaded",
+        "config_file": os.path.abspath(args.config)
+    })
+    
+    #print(json.dumps(asdict(config), indent=2, cls=CustomJSONEncoder))
+    #exit()
 
     try:
-        log_level = getattr(logging, args.log_level.upper())
-    except AttributeError as e:
-        log_level = logging.INFO
-
-    logging.basicConfig(
-        format='{"timestamp": "%(asctime)s.%(msecs)03d", "level": "%(levelname)s", "module", "%(module)s", "function_name": "%(funcName)s", "line_num", %(lineno)d, "message": %(message)s}',
-        datefmt='%Y-%m-%dT%H:%M:%S',
-        encoding='utf-8',
-        level=log_level,
-    )
-    logging.debug(json.dumps({"event_type": "debug_logging_enabled"}))
-
-    quit_when_safe = False
-
-    while(True):
-        try:
-            if args.config:
-                try:
-                    config = auto_routine_nanopore_qc.config.load_config(args.config)
-                    logging.info(json.dumps({"event_type": "config_loaded", "config_file": os.path.abspath(args.config)}))
-                except json.decoder.JSONDecodeError as e:
-                    # If we fail to load the config file, we continue on with the
-                    # last valid config that was loaded.
-                    logging.error(json.dumps({"event_type": "load_config_failed", "config_file": os.path.abspath(args.config)}))
-
+        while(True):
             scan_start_timestamp = datetime.datetime.now()
             for run in core.scan(config):
-                if quit_when_safe:
-                    exit(0)
-                if run is not None:
-                    try:
-                        config = auto_routine_nanopore_qc.config.load_config(args.config)
-                        logging.info(json.dumps({"event_type": "config_loaded", "config_file": os.path.abspath(args.config)}))
-                    except json.decoder.JSONDecodeError as e:
-                        logging.error(json.dumps({"event_type": "load_config_failed", "config_file": os.path.abspath(args.config)}))
+                config = reload_config(args.config, config)
+                try:
                     core.analyze_run(config, run)
+                # A problem with one run shouldn't stop other runs from being checked.
+                # No 'qc_check_complete.json' is written, so the run will be retried on the next scan.
+                except OSError as e:
+                    # Expected, environmental problems (missing files, permissions, network storage).
+                    # The message says what went wrong, so a traceback wouldn't add anything.
+                    log.error({"event_type": "analysis_failed", "sequencing_run_id": run.sequencing_run_id,
+                               "error_type": type(e).__name__, "error": str(e)})
+                except Exception as e:
+                    # Unexpected problems are probably bugs, so include the traceback.
+                    log.error({"event_type": "qc_check_failed", "sequencing_run_id": run.sequencing_run_id,
+                               "error_type": type(e).__name__, "error": str(e)}, exc_info=True)
             scan_complete_timestamp = datetime.datetime.now()
             scan_duration_delta = scan_complete_timestamp - scan_start_timestamp
             scan_duration_seconds = scan_duration_delta.total_seconds()
-            logging.info(json.dumps({"event_type": "scan_complete", "scan_duration_seconds": scan_duration_seconds}))
+            next_scan_timestamp = scan_start_timestamp + datetime.timedelta(seconds=config.scan_interval_seconds)
+            log.info({
+                "event_type": "scan_complete",
+                "scan_duration_seconds": scan_duration_seconds,
+                "scan_interval_seconds": config.scan_interval_seconds,
+                "timestamp_next_scan_start": next_scan_timestamp.isoformat(),
+            })
 
-            if quit_when_safe:
-                exit(0)
-
-            scan_interval = DEFAULT_SCAN_INTERVAL_SECONDS
-            if "scan_interval_seconds" in config:
-                try:
-                    scan_interval = float(str(config['scan_interval_seconds']))
-                except ValueError as e:
-                    scan_interval = DEFAULT_SCAN_INTERVAL_SECONDS
-            time.sleep(scan_interval)
-        except KeyboardInterrupt as e:
-            logging.info(json.dumps({"event_type": "quit_when_safe_enabled"}))
-            quit_when_safe = True
+            time.sleep(max(0, (next_scan_timestamp - datetime.datetime.now()).total_seconds()))
+            config = reload_config(args.config, config)
+    except KeyboardInterrupt:
+        log.info({"event_type": "quit"})
 
 if __name__ == '__main__':
     main()
