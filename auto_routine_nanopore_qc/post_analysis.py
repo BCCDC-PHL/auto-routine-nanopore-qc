@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 
 from . import parsers
 
@@ -75,7 +76,7 @@ def post_analysis_autocycler_nf(config: Config, pipeline: Pipeline, run: Run):
     return None
 
 
-def post_analysis(config, pipeline, run):
+def post_analysis(config: Config, pipeline: Pipeline, run: Run, analysis_result: subprocess.CompletedProcess):
     """
     Perform post-analysis tasks for a pipeline.
 
@@ -85,16 +86,9 @@ def post_analysis(config, pipeline, run):
     :return: None
     """
     pipeline_short_name = pipeline.name.split('/')[1]
-    delete_pipeline_work_dir = True
+    delete_pipeline_work_dir = analysis_result and analysis_result.returncode == 0
     base_analysis_work_dir = config.analysis_work_dir
-
-    # The work_dir includes a timestamp, so we need to glob to find the most recent one
-    work_dir_glob = os.path.join(base_analysis_work_dir, 'work-' + run.sequencing_run_id + '_' + pipeline_short_name + '_' + '*')
-    work_dirs = glob.glob(work_dir_glob)
-    if len(work_dirs) > 0:
-        work_dir = work_dirs[-1]
-    else:
-        work_dir = None
+    work_dir = pipeline.parameters.get('work_dir')
 
     if work_dir and delete_pipeline_work_dir:
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -107,7 +101,6 @@ def post_analysis(config, pipeline, run):
         log.warning({
             "event_type": "analysis_work_dir_not_found",
             "sequencing_run_id": run.sequencing_run_id,
-            "analysis_work_dir_glob": work_dir_glob
         })
 
     if pipeline.name == 'BCCDC-PHL/routine-nanopore-qc':

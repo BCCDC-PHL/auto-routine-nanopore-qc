@@ -55,9 +55,10 @@ def main():
         "event_type": "config_loaded",
         "config_file": os.path.abspath(args.config)
     })
-    
-    #print(json.dumps(asdict(config), indent=2, cls=CustomJSONEncoder))
-    #exit()
+
+    # Helful for troubleshooting... uncomment as needed.
+    # print(json.dumps(asdict(config), indent=2, cls=CustomJSONEncoder))
+    # exit()
 
     try:
         while(True):
@@ -65,18 +66,34 @@ def main():
             for run in core.scan(config):
                 config = reload_config(args.config, config)
                 try:
+                    log.debug({
+                        "event_type": "analysis_starting",
+                        "sequencing_run_id": run.sequencing_run_id,
+                    })
                     core.analyze_run(config, run)
+                    log.debug({
+                        "event_type": "analysis_completed",
+                        "sequencing_run_id": run.sequencing_run_id,
+                    })
                 # A problem with one run shouldn't stop other runs from being checked.
                 # No 'qc_check_complete.json' is written, so the run will be retried on the next scan.
                 except OSError as e:
                     # Expected, environmental problems (missing files, permissions, network storage).
                     # The message says what went wrong, so a traceback wouldn't add anything.
-                    log.error({"event_type": "analysis_failed", "sequencing_run_id": run.sequencing_run_id,
-                               "error_type": type(e).__name__, "error": str(e)})
+                    log.error({
+                        "event_type": "analysis_failed",
+                        "sequencing_run_id": run.sequencing_run_id,
+                        "error_type": type(e).__name__, "error": str(e)
+                    })
                 except Exception as e:
                     # Unexpected problems are probably bugs, so include the traceback.
-                    log.error({"event_type": "qc_check_failed", "sequencing_run_id": run.sequencing_run_id,
-                               "error_type": type(e).__name__, "error": str(e)}, exc_info=True)
+                    log.error({
+                        "event_type": "analysis_failed",
+                        "sequencing_run_id": run.sequencing_run_id,
+                        "error_type": type(e).__name__,
+                        "error": str(e)
+                    }, exc_info=True)
+
             scan_complete_timestamp = datetime.datetime.now()
             scan_duration_delta = scan_complete_timestamp - scan_start_timestamp
             scan_duration_seconds = scan_duration_delta.total_seconds()

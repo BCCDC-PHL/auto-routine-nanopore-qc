@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, asdict
 from enum import StrEnum
 from pathlib import Path
 from typing import Optional
@@ -45,6 +45,8 @@ class Config:
     """
     analysis_output_dir: Path
     analysis_work_dir: Path
+    pipelines: list[Pipeline]
+    conda_cache_dir: Path
     run_parent_dirs: list[Path] = field(default_factory=list)
     notification: dict = field(default_factory=dict)
     scan_interval_seconds: float = 3600
@@ -54,13 +56,14 @@ class Config:
     known_species: list[dict] = field(default_factory=list)
     projects_definition_file: Optional[Path] = None
     projects: list[dict] = field(default_factory=list)
-    pipelines: list[Pipeline] = field(default_factory=list)
+
 
     def __post_init__(self):
         self.scan_interval_seconds = float(self.scan_interval_seconds)
         self.run_parent_dirs = [Path(p) for p in self.run_parent_dirs]
         self.analysis_output_dir = Path(self.analysis_output_dir)
         self.analysis_work_dir = Path(self.analysis_work_dir)
+        self.conda_cache_dir = Path(self.conda_cache_dir)
 
 
     @classmethod
@@ -80,3 +83,4 @@ class Run:
     sequencing_run_id: str
     path: Path
     instrument_type: InstrumentType
+    fastq_directory: Optional[Path] = None

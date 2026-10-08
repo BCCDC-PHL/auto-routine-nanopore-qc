@@ -67,11 +67,13 @@ def find_run_dirs(config: Config):
             run_dir = Path(subdir.path).resolve()
             instrument_type = instrument.determine_instrument_type(run_id)
             analysis_not_already_initiated = not (config.analysis_output_dir / run_id).exists()
+            combine_fastq_complete_json_file_exists = (run_dir / 'combine_fastq_complete.json').exists()
+            combine_fastq_complete_output_dir_exists = (run_dir / 'fastq_pass_combined').exists()
 
             conditions_checked = {
                 "is_directory": subdir.is_dir(),
                 "supported_run_id_format": instrument_type != InstrumentType.unknown,
-                "combine_fastq_complete": (run_dir / 'combine_fastq_complete.json').exists(),
+                "combine_fastq_complete": combine_fastq_complete_json_file_exists and combine_fastq_complete_output_dir_exists,
                 "readable": is_readable(run_dir),
                 "analysis_not_already_initiated": analysis_not_already_initiated,
                 "not_excluded": run_id not in config.excluded_runs
@@ -83,11 +85,21 @@ def find_run_dirs(config: Config):
                     "sequencing_run_id": run_id,
                     "run_directory_path": str(run_dir),
                 })
-                run = Run(sequencing_run_id=run_id, path=run_dir, instrument_type=instrument_type)
+                log.debug({
+                    "event_type": "run_directory_checked",
+                    "run_directory_path": str(run_dir),
+                    "conditions_checked": conditions_checked
+                })
+                run = Run(
+                    sequencing_run_id=run_id,
+                    path=run_dir,
+                    instrument_type=instrument_type,
+                    fastq_directory=Path(run_dir / 'fastq_pass_combined'),
+                )
                 yield run
             else:
                 log.debug({
-                    "event_type": "directory_skipped",
+                    "event_type": "run_directory_skipped",
                     "run_directory_path": str(run_dir),
                     "conditions_checked": conditions_checked
                 })
@@ -119,6 +131,12 @@ def analyze_run(config: Config, run: Run):
     base_analysis_work_dir = config.analysis_work_dir
     
     for pipeline in config.pipelines:
+        log.debug({
+            "event_type": "pre_analysis_starting",
+            "sequencing_run_id": run.sequencing_run_id,
+            "pipeline_name": pipeline.name,
+        })
+
         pipeline = pre_analysis.prepare_analysis(config, pipeline, run)
 
         log.debug({
@@ -145,3 +163,9 @@ def analyze_run(config: Config, run: Run):
                 "conditions_checked": conditions_checked,
             })
             continue
+
+        analysis_result = analysis.run_pipeline(config, pipeline, run)
+
+        post_analysis.post_analysis(config, pipeline, run, analysis_result)
+
+        

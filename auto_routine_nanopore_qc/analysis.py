@@ -26,9 +26,10 @@ def build_pipeline_command(config: Config, pipeline: Pipeline) -> list[str]:
             'nextflow',
             '-log', pipeline.parameters['log_path'],
             'run',
-            pipeline['name'],
+            pipeline.name,
             '-r', pipeline.version,
-            '-profile', pipeline.profile,
+            '-profile', 'conda',
+            '--cache', config.conda_cache_dir,
             '-work-dir', pipeline.parameters['work_dir'],
             '-with-report', pipeline.parameters['report_path'],
             '-with-trace', pipeline.parameters['trace_path'],
@@ -40,7 +41,7 @@ def build_pipeline_command(config: Config, pipeline: Pipeline) -> list[str]:
     pipeline.parameters.pop('trace_path', None)
     pipeline.parameters.pop('timeline_path', None)
 
-    for flag, value in pipeline['parameters'].items():
+    for flag, value in pipeline.parameters.items():
         if value is None:
             pipeline_command += ['--' + flag]
         else:
@@ -51,18 +52,13 @@ def build_pipeline_command(config: Config, pipeline: Pipeline) -> list[str]:
     return pipeline_command
 
 
-def run_pipeline(config, pipeline, run, analysis_mode):
+def run_pipeline(config: Config, pipeline: Pipeline, run: Run):
     """
     Run a pipeline.
 
-    :param config: The config dictionary
-    :type config: dict
-    :param run: The run dictionary
-    :type run: dict
-    :param pipeline: The pipeline dictionary
-    :type pipeline: dict
-    :param analysis_mode: The analysis mode
-    :type analysis_mode: str
+    :param config: The app config
+    :param pipeline: The pipeline
+    :param run: The sequencing run 
     :return: None
     :rtype: None
     """
@@ -73,29 +69,44 @@ def run_pipeline(config, pipeline, run, analysis_mode):
     pipeline_command = build_pipeline_command(config, pipeline)
     pipeline_command_str = list(map(str, pipeline_command))
 
-    sequencing_run_id = run['sequencing_run_id']
-    analysis_work_dir = pipeline['parameters']['work_dir']
+    analysis_work_dir = pipeline.parameters['work_dir']
+    analysis_result = None
     try:
         os.makedirs(analysis_work_dir)
-        logging.info(json.dumps({
+        log.info({
             "event_type": "analysis_started",
-            "sequencing_run_id": sequencing_run_id,
+            "sequencing_run_id": run.sequencing_run_id,
             "pipeline_command": pipeline_command_str
-        }))
-        analysis_result = subprocess.run(pipeline_command_str, capture_output=True, check=True, cwd=analysis_work_dir)
-        analysis_tracking["timestamp_analysis_complete"] = datetime.datetime.now().isoformat()
-        analysis_complete_path = os.path.join(pipeline['parameters']['outdir'], 'analysis_complete.json')
-        with open(analysis_complete_path, 'w') as f:
+        })
+        analysis_result = subprocess.run(
+            pipeline_command_str,
+            capture_output=True,
+            check=True,
+            cwd=analysis_work_dir
+        )
+        if analysis_result.returncode == 0:
+            analysis_tracking["timestamp_analysis_complete"] = datetime.datetime.now().isoformat()
+            analysis_complete_path = os.path.join(pipeline.parameters['outdir'], 'analysis_complete.json')
+            with open(analysis_complete_path, 'w') as f:
                 json.dump(analysis_tracking, f, indent=2)
                 f.write('\n')
-        logging.info(json.dumps({
-            "event_type": "analysis_complete",
-            "sequencing_run_id": sequencing_run_id,
-            "pipeline_command": pipeline_command_str,
-        }))
+            log.info({
+                "event_type": "analysis_complete",
+                "sequencing_run_id": run.sequencing_run_id,
+                "pipeline_command": pipeline_command_str,
+            })
+        else:
+            log.error({
+                "event_type": "analysis_failed",
+                "sequencing_run_id": run.sequencing_run_id,
+                "pipeline_command": pipeline_command_str
+            })
+        return analysis_result
     except subprocess.CalledProcessError as e:
-        logging.error(json.dumps({
+        log.error({
             "event_type": "analysis_failed",
-            "sequencing_run_id": sequencing_run_id,
+            "sequencing_run_id": run.sequencing_run_id,
             "pipeline_command": pipeline_command_str
-        }))
+        })
+
+    

@@ -40,7 +40,7 @@ def load_config(config_path: os.PathLike) -> Config:
     if 'excluded_runs_list' in config_dict:
         config_dict['excluded_runs'] = _load_optional_list_file(config_dict['excluded_runs_list'], 'excluded_runs_list')
 
-    known_species_file = config_dict.get('known_species_file')
+    known_species_file = config_dict.get('known_species_list')
     if known_species_file and os.path.exists(known_species_file):
         with open(known_species_file, 'r') as f:
             config_dict['known_species'] = list(csv.DictReader(f, dialect='unix'))
@@ -60,9 +60,9 @@ def load_config(config_path: os.PathLike) -> Config:
             version=p['pipeline_version'],
             parameters=p['pipeline_parameters']
         )
-
-    config_dict['pipelines'] = pipeline_objs
+        pipeline_objs.append(pipeline_obj)
 
     config = Config.from_dict(config_dict)
+    config.pipelines = pipeline_objs
 
     return config
