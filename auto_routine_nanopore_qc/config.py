@@ -3,7 +3,7 @@ import json
 import logging
 import os
 
-from auto_routine_nanopore_qc.model import Config
+from auto_routine_nanopore_qc.model import Config, Pipeline
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +51,17 @@ def load_config(config_path: os.PathLike) -> Config:
     if notification.get('send_notification_emails', False):
         with open(notification['system_config_file'], 'r') as f:
             notification.update(json.load(f))
+
+    pipeline_dicts = config_dict.get('pipelines', [])
+    pipeline_objs = []
+    for p in pipeline_dicts:
+        pipeline_obj = Pipeline(
+            name=p['pipeline_name'],
+            version=p['pipeline_version'],
+            parameters=p['pipeline_parameters']
+        )
+
+    config_dict['pipelines'] = pipeline_objs
 
     config = Config.from_dict(config_dict)
 

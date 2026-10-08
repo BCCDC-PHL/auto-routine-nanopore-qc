@@ -29,6 +29,16 @@ class InstrumentType(StrEnum):
 
 
 @dataclass
+class Pipeline:
+    """
+    """
+    name: str
+    version: str
+    dependencies: list[dict] = field(default_factory=list)
+    parameters: dict = field(default_factory=dict)
+
+
+@dataclass
 class Config:
     """
     Main application config.
@@ -44,12 +54,14 @@ class Config:
     known_species: list[dict] = field(default_factory=list)
     projects_definition_file: Optional[Path] = None
     projects: list[dict] = field(default_factory=list)
+    pipelines: list[Pipeline] = field(default_factory=list)
 
     def __post_init__(self):
         self.scan_interval_seconds = float(self.scan_interval_seconds)
         self.run_parent_dirs = [Path(p) for p in self.run_parent_dirs]
         self.analysis_output_dir = Path(self.analysis_output_dir)
         self.analysis_work_dir = Path(self.analysis_work_dir)
+
 
     @classmethod
     def from_dict(cls, data: dict):

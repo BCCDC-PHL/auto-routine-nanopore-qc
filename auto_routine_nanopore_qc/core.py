@@ -12,8 +12,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 import auto_routine_nanopore_qc.instrument as instrument
+import auto_routine_nanopore_qc.pre_analysis as pre_analysis
+import auto_routine_nanopore_qc.analysis as analysis
+import auto_routine_nanopore_qc.post_analysis as post_analysis
 
 from auto_routine_nanopore_qc.model import Config, CustomJSONEncoder, InstrumentType, Run
+
 
 log = logging.getLogger(__name__)
 
@@ -80,8 +84,6 @@ def find_run_dirs(config: Config):
                     "run_directory_path": str(run_dir),
                 })
                 run = Run(sequencing_run_id=run_id, path=run_dir, instrument_type=instrument_type)
-                print(json.dumps(asdict(run), indent=2, cls=CustomJSONEncoder))
-                exit()
                 yield run
             else:
                 log.debug({
@@ -117,56 +119,29 @@ def analyze_run(config: Config, run: Run):
     base_analysis_work_dir = config.analysis_work_dir
     
     for pipeline in config.pipelines:
-        pipeline_parameters = pipeline['pipeline_parameters']
-        pipeline_short_name = pipeline['pipeline_name'].split('/')[1].replace('_', '-')
-        pipeline_minor_version = '.'.join(pipeline['pipeline_version'].split('.')[0:2])
-        analysis_timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-        analysis_run_id = run.sequencing_run_id
-        analysis_output_dir = os.path.join(config.analysis_output_dir, analysis_run_id, pipeline_short_name + '-' + pipeline_minor_version + '-output')
-        pipeline_parameters['fastq_input'] = os.path.join(run.path, 'fastq_pass_combined')
-        pipeline_parameters['outdir'] = analysis_output_dir
-        analysis_work_dir = os.path.abspath(os.path.join(base_analysis_work_dir, 'work-' + analysis_run_id + '-' + analysis_timestamp))
-        analysis_trace_path = os.path.abspath(os.path.join(base_analysis_outdir, analysis_run_id, pipeline_short_name + '-' + pipeline_minor_version + '-output', analysis_run_id + '_trace.tsv'))
-        analysis_report_path = os.path.abspath(os.path.join(base_analysis_outdir, analysis_run_id, pipeline_short_name + '-' + pipeline_minor_version + '-output', analysis_run_id + '_nextflow_report.html'))
-        pipeline_command = [
-            'nextflow',
-            'run',
-            pipeline['pipeline_name'],
-            '-r', pipeline['pipeline_version'],
-            '-profile', 'conda',
-            '--cache', os.path.join(os.path.expanduser('~'), '.conda/envs'),
-            '-work-dir', analysis_work_dir,
-            '-with-trace', analysis_trace_path,
-        ]
-        if 'send_notification_emails' in config.notification and config.notification['send_notification_emails']:
-            if 'recipient_email_addresses' in config.notification:
-                pipeline_command += ['-with-notification', ','.join(config.notification['recipient_email_addresses'])]
+        pipeline = pre_analysis.prepare_analysis(config, pipeline, run)
 
-        for flag, config_value in pipeline_parameters.items():
-            if config_value is None:
-                value = run[flag]
-            else:
-                value = config_value
-            pipeline_command += ['--' + flag, value]
-            pipeline_command = list(map(str, pipeline_command))
-        log.info({"event_type": "analysis_started", "sequencing_run_id": analysis_run_id, "pipeline_command": " ".join(pipeline_command)})
+        log.debug({
+            "event_type": "prepare_analysis_complete",
+            "sequencing_run_id": run.sequencing_run_id,
+            "pipeline_name": pipeline.name
+        })
 
-        try:
-            os.makedirs(analysis_work_dir, exist_ok=True)
-            timestamp_analysis_start = datetime.datetime.now().isoformat()
-            subprocess.run(pipeline_command, capture_output=True, check=True, cwd=analysis_work_dir)
-            timestamp_analysis_complete = datetime.datetime.now().isoformat()
-            analysis_complete_path = os.path.join(analysis_output_dir, 'analysis_complete.json')
-            analysis_complete = {
-                'timestamp_analysis_start': timestamp_analysis_start,
-                'timestamp_analysis_complete': timestamp_analysis_complete,
-            }
-            with open(analysis_complete_path, 'w') as f:
-                json.dump(analysis_complete, f, indent=2)
-            log.info({"event_type": "analysis_completed", "sequencing_run_id": analysis_run_id, "pipeline_command": " ".join(pipeline_command)})
-            shutil.rmtree(analysis_work_dir, ignore_errors=True)
-            log.info({"event_type": "analysis_work_dir_deleted", "sequencing_run_id": analysis_run_id, "analysis_work_dir_path": analysis_work_dir})
-        except subprocess.CalledProcessError as e:
-            log.error({"event_type": "analysis_failed", "sequencing_run_id": analysis_run_id, "pipeline_command": " ".join(pipeline_command)})
-        except OSError as e:
-            log.error({"event_type": "delete_analysis_work_dir_failed", "sequencing_run_id": analysis_run_id, "analysis_work_dir_path": analysis_work_dir})
+        analysis_dependencies_complete = pre_analysis.check_analysis_dependencies_complete(config, pipeline, run)
+
+        analysis_not_already_started = not os.path.exists(pipeline.parameters['outdir'])
+        conditions_checked = {
+            'pipeline_dependencies_met': analysis_dependencies_complete,
+            'analysis_not_already_started': analysis_not_already_started,
+        }
+
+        if not all(conditions_checked.values()):
+            log.warning({
+                "event_type": "analysis_skipped",
+                "pipeline_name": pipeline.name,
+                "pipeline_version": pipeline.version,
+                "pipeline_dependencies": pipeline.dependencies,
+                "sequencing_run_id": run.sequencing_run_id,
+                "conditions_checked": conditions_checked,
+            })
+            continue
