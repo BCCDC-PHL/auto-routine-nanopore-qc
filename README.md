@@ -68,5 +68,5 @@ Every log line should include the fields:
 ...and the contents of the `message` key will be a JSON object that includes at `event_type`. The remaining keys inside the `message` will vary by event type.
 
 ```json
-{"timestamp": "2022-09-22T11:32:52.287", "level": "INFO", "module", "core", "function_name": "scan", "line_num", 56, "message": {"event_type": "scan_start"}}
+{"timestamp": "2022-09-22T11:32:52.287", "level": "INFO", "module": "core", "function_name": "scan", "line_num": 56, "message": {"event_type": "scan_start"}}
 ```
