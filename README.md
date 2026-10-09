@@ -23,26 +23,33 @@ This tool takes a single config file, in JSON format, with the following structu
 
 ```json
 {
-  "fastq_by_run_dir": "/path/to/fastq_symlinks_by_run",
-  "analysis_output_dir": "/path/to/analysis_by_run",
-  "analysis_work_dir": "/path/to/auto-routine-nanopore-qc-work",
-  "notification_email_addresses": [
-	"someone@example.org",
-	"someone_else@example.org"
-  ],
-  "send_notification_emails": true,
-  "scan_interval_seconds": 3600,
-  "pipelines": [
-    {
-      "pipeline_name": "BCCDC-PHL/routine-nanopore-qc",
-      "pipeline_version": "v0.1.0",
-      "pipeline_parameters": {
-	    "fastq_input": null,
-		"kraken2_db": "/path/to/kraken2_db",
-		"outdir": null
-      }
-    }
-  ]
+    "run_parent_dirs": [
+        "/path/to/sequencing/runs"
+    ],
+    "analysis_output_dir": "/path/to/routine-nanopore-qc/analysis_by_run",
+    "analysis_work_dir": "/path/to/work/auto-routine-nanopore-qc",
+    "conda_cache_dir": "/path/to/.conda/envs",
+    "notification": {
+        "system_config_file": "/path/to/notification/config.json",
+        "recipient_email_addresses": [
+            "someone@example.org"
+        ],
+        "send_notification_emails": true
+    },
+    "scan_interval_seconds": 60,
+    "known_species_list": "known_species.csv",
+    "pipelines": [
+        {
+	        "pipeline_name": "BCCDC-PHL/routine-nanopore-qc",
+	        "pipeline_version": "v0.1.1",
+	        "profile": "conda",
+	        "pipeline_parameters": {
+		        "fastq_input": null,
+		        "kraken2_db": "/path/to/ref_databases/kraken2/latest_standard_08gb",
+		        "outdir": null
+            }
+        }
+    ]
 }
 ```
 
