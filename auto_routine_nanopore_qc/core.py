@@ -1,5 +1,6 @@
 import datetime
 import csv
+import glob
 import json
 import logging
 import os
@@ -145,7 +146,7 @@ def analyze_run(config: Config, run: Run):
         samplesheet_dst_path = os.path.abspath(os.path.join(
             base_analysis_outdir,
             run.sequencing_run_id,
-            "sample_sheet.original.csv",
+            f"{run.sequencing_run_id}_sample_sheet.original.csv",
         ))
         shutil.copy2(samplesheet_path, samplesheet_dst_path)
         os.chmod(samplesheet_dst_path, 0o640)
@@ -153,7 +154,7 @@ def analyze_run(config: Config, run: Run):
         parsed_samplesheet_dst_path = os.path.abspath(os.path.join(
             base_analysis_outdir,
             run.sequencing_run_id,
-            "sample_sheet.parsed.csv",
+            f"{run.sequencing_run_id}_sample_sheet.parsed.csv",
         ))
         parsed_samplesheet_fieldnames = [
             'sample_id',
@@ -165,6 +166,72 @@ def analyze_run(config: Config, run: Run):
             writer.writeheader()
             for row in parsed_samplesheet:
                 writer.writerow(row)
+
+    minknow_json_report_glob = os.path.abspath(os.path.join(
+        run.path,
+        'report_*.json'
+    ))
+
+    minknow_json_report = None
+    minknow_json_reports = glob.glob(minknow_json_report_glob)
+    if len(minknow_json_reports) > 0:
+        minknow_json_report = minknow_json_reports[0]
+
+    if minknow_json_report is not None:
+        log.info({
+            "event_type": "minknow_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "json",
+            "path": minknow_json_report,
+        })
+        minknow_json_report_dst_path = os.path.abspath(os.path.join(
+            base_analysis_outdir,
+            run.sequencing_run_id,
+            f"{run.sequencing_run_id}_minknow_report.json",
+        ))
+        shutil.copy2(minknow_json_report, minknow_json_report_dst_path)
+        os.chmod(minknow_json_report_dst_path, 0o640)
+        
+    else:
+        log.warning({
+            "event_type": "minknow_report_not_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "json",
+        })
+                  
+
+    minknow_html_report_glob = os.path.abspath(os.path.join(
+        run.path,
+        'report_*.html'
+    ))
+
+    minknow_html_report = None
+    minknow_html_reports = glob.glob(minknow_html_report_glob)
+    if len(minknow_html_reports) > 0:
+        minknow_html_report = minknow_html_reports[0]
+
+    if minknow_html_report is not None:
+        log.info({
+            "event_type": "minknow_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "html",
+            "path": minknow_html_report,
+        })
+        minknow_html_report_dst_path = os.path.abspath(os.path.join(
+            base_analysis_outdir,
+            run.sequencing_run_id,
+            f"{run.sequencing_run_id}_minknow_report.html",
+        ))
+        shutil.copy2(minknow_html_report, minknow_html_report_dst_path)
+        os.chmod(minknow_html_report_dst_path, 0o640)
+        
+    else:
+        log.warning({
+            "event_type": "minknow_report_not_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "html",
+        })
+    
 
     for pipeline in config.pipelines:
         log.debug({

@@ -37,6 +37,7 @@ def parse_samplesheet(samplesheet_path: Path) -> list[dict]:
             parsed_row['barcode'] = row['barcode']
             alias_split = row['alias'].split('_', 1)
             sample_id = alias_split[0]
+            parsed_row['sample_id'] = sample_id
             project_id = None
             if len(alias_split) > 1:
                 project_id = alias_split[1]
