@@ -119,23 +119,9 @@ def scan(config: Config) -> Iterator[Run]:
     yield from find_run_dirs(config)
 
 
-def analyze_run(config: Config, run: Run):
+def collect_run_dir_files(run: Run, run_analysis_outdir: Path):
     """
-    Initiate an analysis on one directory of fastq files.
-    
-    :param config: Application config.
-    :param run: Sequencing run
-    :return: None
-    :rtype: None
     """
-    base_analysis_outdir = config.analysis_output_dir
-    base_analysis_work_dir = config.analysis_work_dir
-
-    os.makedirs(
-        base_analysis_outdir / run.sequencing_run_id,
-        exist_ok=True
-    )
-
     samplesheet_path = samplesheet.find_samplesheet(run)
     if samplesheet_path is not None:
         log.info({
@@ -143,19 +129,18 @@ def analyze_run(config: Config, run: Run):
             "sequencing_run_id": run.sequencing_run_id,
             "samplesheet_path": samplesheet_path,
         })
-        samplesheet_dst_path = os.path.abspath(os.path.join(
-            base_analysis_outdir,
-            run.sequencing_run_id,
-            f"{run.sequencing_run_id}_sample_sheet.original.csv",
-        ))
+        samplesheet_dst_path = run_analysis_outdir / f"{run.sequencing_run_id}_sample_sheet.original.csv"
         shutil.copy2(samplesheet_path, samplesheet_dst_path)
         os.chmod(samplesheet_dst_path, 0o640)
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "samplesheet",
+            "src_path": samplesheet_path,
+            "dst_path": samplesheet_dst_path,
+        })
         parsed_samplesheet = samplesheet.parse_samplesheet(samplesheet_path)
-        parsed_samplesheet_dst_path = os.path.abspath(os.path.join(
-            base_analysis_outdir,
-            run.sequencing_run_id,
-            f"{run.sequencing_run_id}_sample_sheet.parsed.csv",
-        ))
+        parsed_samplesheet_dst_path = run_analysis_outdir / f"{run.sequencing_run_id}_sample_sheet.parsed.csv"
         parsed_samplesheet_fieldnames = [
             'sample_id',
             'barcode',
@@ -166,6 +151,11 @@ def analyze_run(config: Config, run: Run):
             writer.writeheader()
             for row in parsed_samplesheet:
                 writer.writerow(row)
+        log.info({
+            "event_type": "parsed_samplesheet_written",
+            "sequencing_run_id": run.sequencing_run_id,
+            "path": parsed_samplesheet_dst_path
+        })
 
     minknow_json_report_glob = os.path.abspath(os.path.join(
         run.path,
@@ -185,53 +175,106 @@ def analyze_run(config: Config, run: Run):
             "path": minknow_json_report,
         })
         minknow_json_report_dst_path = os.path.abspath(os.path.join(
-            base_analysis_outdir,
-            run.sequencing_run_id,
+            run_analysis_outdir,
             f"{run.sequencing_run_id}_minknow_report.json",
         ))
         shutil.copy2(minknow_json_report, minknow_json_report_dst_path)
         os.chmod(minknow_json_report_dst_path, 0o640)
-        
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "minknow_report_json",
+            "src_path": minknow_json_report,
+            "dst_path": minknow_json_report_dst_path,
+        })
     else:
         log.warning({
             "event_type": "minknow_report_not_found",
             "sequencing_run_id": run.sequencing_run_id,
             "report_type": "json",
         })
-                  
 
-    minknow_html_report_glob = os.path.abspath(os.path.join(
-        run.path,
-        'report_*.html'
-    ))
+    minknow_html_report_glob = str(run.path / 'report_*.html')
 
     minknow_html_report = None
     minknow_html_reports = glob.glob(minknow_html_report_glob)
     if len(minknow_html_reports) > 0:
-        minknow_html_report = minknow_html_reports[0]
+        minknow_html_report = Path(minknow_html_reports[0]).resolve()
 
     if minknow_html_report is not None:
         log.info({
             "event_type": "minknow_report_found",
             "sequencing_run_id": run.sequencing_run_id,
             "report_type": "html",
-            "path": minknow_html_report,
+            "path": str(minknow_html_report),
         })
-        minknow_html_report_dst_path = os.path.abspath(os.path.join(
-            base_analysis_outdir,
-            run.sequencing_run_id,
-            f"{run.sequencing_run_id}_minknow_report.html",
-        ))
+        minknow_html_report_dst_path = (run_analysis_outdir / f"{run.sequencing_run_id}_minknow_report.html").absolute()
         shutil.copy2(minknow_html_report, minknow_html_report_dst_path)
         os.chmod(minknow_html_report_dst_path, 0o640)
-        
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "minknow_report_html",
+            "src_path": minknow_html_report,
+            "dst_path": minknow_html_report_dst_path,
+        })
     else:
         log.warning({
             "event_type": "minknow_report_not_found",
             "sequencing_run_id": run.sequencing_run_id,
             "report_type": "html",
         })
+
+    run_qc_check_report_path = run.path / "qc_check_complete.json"
     
+    if run_qc_check_report_path.is_file():
+        log.info({
+            "event_type": "run_qc_check_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "path": run_qc_check_report_path,
+        })
+        run_qc_check_report_dst_path = (run_analysis_outdir / f"{run.sequencing_run_id}_qc_check.json").absolute()
+        log.info({
+            "event_type": "run_qc_check_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "path": run_qc_check_report_path,
+        })
+        shutil.copy2(run_qc_check_report_path, run_qc_check_report_dst_path)
+        os.chmod(run_qc_check_report_dst_path, 0o640)
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "run_qc_check_report",
+            "src_path": run_qc_check_report_path,
+            "dst_path": run_qc_check_report_dst_path,
+        })
+    else:
+        log.warning({
+            "event_type": "run_qc_check_report_not_found",
+            "sequencing_run_id": run.sequencing_run_id,
+        })        
+
+
+def analyze_run(config: Config, run: Run):
+    """
+    Initiate an analysis on one directory of fastq files.
+    
+    :param config: Application config.
+    :param run: Sequencing run
+    :return: None
+    :rtype: None
+    """
+    base_analysis_outdir = config.analysis_output_dir
+    base_analysis_work_dir = config.analysis_work_dir
+
+    run_analysis_outdir = base_analysis_outdir / run.sequencing_run_id
+
+    os.makedirs(
+        run_analysis_outdir,
+        exist_ok=True
+    )
+
+    collect_run_dir_files(run, run_analysis_outdir)
 
     for pipeline in config.pipelines:
         log.debug({
@@ -270,5 +313,3 @@ def analyze_run(config: Config, run: Run):
         analysis_result = analysis.run_pipeline(config, pipeline, run)
 
         post_analysis.post_analysis(config, pipeline, run, analysis_result)
-
-        
