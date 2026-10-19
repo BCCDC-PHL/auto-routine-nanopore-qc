@@ -27,7 +27,6 @@ def post_analysis_routine_nanopore_qc(config: Config, pipeline: Pipeline, run: R
         "event_type": "post_analysis_started",
         "sequencing_run_id": run.sequencing_run_id,
         "pipeline_name": pipeline.name,
-        "run": run,
     })
 
     analysis_run_output_dir = os.path.join(config.analysis_output_dir, run.sequencing_run_id)
