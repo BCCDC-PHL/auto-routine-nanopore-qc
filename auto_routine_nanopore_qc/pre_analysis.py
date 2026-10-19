@@ -7,6 +7,8 @@ import os
 import shutil
 import subprocess
 
+from pathlib import Path
+
 from auto_routine_nanopore_qc.model import Config, CustomJSONEncoder, Run, Pipeline
 
 log = logging.getLogger(__name__)
@@ -84,6 +86,7 @@ def pre_analysis_routine_nanopore_qc(config: Config, pipeline: Pipeline, run: Ru
         run.sequencing_run_id,
         pipeline_output_dirname,
     ))
+
     pipeline.parameters['fastq_input'] = run.fastq_directory
     pipeline.parameters['outdir'] = outdir
 

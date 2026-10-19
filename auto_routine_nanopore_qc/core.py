@@ -1,4 +1,6 @@
 import datetime
+import csv
+import glob
 import json
 import logging
 import os
@@ -15,6 +17,7 @@ import auto_routine_nanopore_qc.instrument as instrument
 import auto_routine_nanopore_qc.pre_analysis as pre_analysis
 import auto_routine_nanopore_qc.analysis as analysis
 import auto_routine_nanopore_qc.post_analysis as post_analysis
+import auto_routine_nanopore_qc.samplesheet as samplesheet
 
 from auto_routine_nanopore_qc.model import Config, CustomJSONEncoder, InstrumentType, Run
 
@@ -116,20 +119,165 @@ def scan(config: Config) -> Iterator[Run]:
     yield from find_run_dirs(config)
 
 
+def collect_run_dir_files(run: Run, run_analysis_outdir: Path):
+    """
+    Collect several files from top-level sequencing run dir,
+    to make them available for routine-nanopore-qc-collector (and Nanopore QC site)
+    """
+    samplesheet_path = samplesheet.find_samplesheet(run)
+    if samplesheet_path is not None:
+        log.info({
+            "event_type": "samplesheet_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "samplesheet_path": samplesheet_path,
+        })
+        samplesheet_dst_path = run_analysis_outdir / f"{run.sequencing_run_id}_sample_sheet.original.csv"
+        shutil.copy2(samplesheet_path, samplesheet_dst_path)
+        os.chmod(samplesheet_dst_path, 0o640)
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "samplesheet",
+            "src_path": samplesheet_path,
+            "dst_path": samplesheet_dst_path,
+        })
+        parsed_samplesheet = samplesheet.parse_samplesheet(samplesheet_path)
+        parsed_samplesheet_dst_path = run_analysis_outdir / f"{run.sequencing_run_id}_sample_sheet.parsed.csv"
+        parsed_samplesheet_fieldnames = [
+            'sample_id',
+            'barcode',
+            'project_id',
+        ]
+        with open(parsed_samplesheet_dst_path, 'w') as f:
+            writer = csv.DictWriter(f, fieldnames=parsed_samplesheet_fieldnames, extrasaction='ignore', quoting=csv.QUOTE_MINIMAL)
+            writer.writeheader()
+            for row in parsed_samplesheet:
+                writer.writerow(row)
+        log.info({
+            "event_type": "parsed_samplesheet_written",
+            "sequencing_run_id": run.sequencing_run_id,
+            "path": parsed_samplesheet_dst_path
+        })
+
+    minknow_json_report_glob = os.path.abspath(os.path.join(
+        run.path,
+        'report_*.json'
+    ))
+
+    minknow_json_report = None
+    minknow_json_reports = glob.glob(minknow_json_report_glob)
+    if len(minknow_json_reports) > 0:
+        minknow_json_report = minknow_json_reports[0]
+
+    if minknow_json_report is not None:
+        log.info({
+            "event_type": "minknow_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "json",
+            "path": minknow_json_report,
+        })
+        minknow_json_report_dst_path = os.path.abspath(os.path.join(
+            run_analysis_outdir,
+            f"{run.sequencing_run_id}_minknow_report.json",
+        ))
+        shutil.copy2(minknow_json_report, minknow_json_report_dst_path)
+        os.chmod(minknow_json_report_dst_path, 0o640)
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "minknow_report_json",
+            "src_path": minknow_json_report,
+            "dst_path": minknow_json_report_dst_path,
+        })
+    else:
+        log.warning({
+            "event_type": "minknow_report_not_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "json",
+        })
+
+    minknow_html_report_glob = str(run.path / 'report_*.html')
+
+    minknow_html_report = None
+    minknow_html_reports = glob.glob(minknow_html_report_glob)
+    if len(minknow_html_reports) > 0:
+        minknow_html_report = Path(minknow_html_reports[0]).resolve()
+
+    if minknow_html_report is not None:
+        log.info({
+            "event_type": "minknow_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "html",
+            "path": str(minknow_html_report),
+        })
+        minknow_html_report_dst_path = (run_analysis_outdir / f"{run.sequencing_run_id}_minknow_report.html").absolute()
+        shutil.copy2(minknow_html_report, minknow_html_report_dst_path)
+        os.chmod(minknow_html_report_dst_path, 0o640)
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "minknow_report_html",
+            "src_path": minknow_html_report,
+            "dst_path": minknow_html_report_dst_path,
+        })
+    else:
+        log.warning({
+            "event_type": "minknow_report_not_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "report_type": "html",
+        })
+
+    run_qc_check_report_path = run.path / "qc_check_complete.json"
+    
+    if run_qc_check_report_path.is_file():
+        log.info({
+            "event_type": "run_qc_check_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "path": run_qc_check_report_path,
+        })
+        run_qc_check_report_dst_path = (run_analysis_outdir / f"{run.sequencing_run_id}_qc_check.json").absolute()
+        log.info({
+            "event_type": "run_qc_check_report_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "path": run_qc_check_report_path,
+        })
+        shutil.copy2(run_qc_check_report_path, run_qc_check_report_dst_path)
+        os.chmod(run_qc_check_report_dst_path, 0o640)
+        log.info({
+            "event_type": "file_copied",
+            "sequencing_run_id": run.sequencing_run_id,
+            "file_type": "run_qc_check_report",
+            "src_path": run_qc_check_report_path,
+            "dst_path": run_qc_check_report_dst_path,
+        })
+    else:
+        log.warning({
+            "event_type": "run_qc_check_report_not_found",
+            "sequencing_run_id": run.sequencing_run_id,
+        })        
+
+
 def analyze_run(config: Config, run: Run):
     """
     Initiate an analysis on one directory of fastq files.
     
     :param config: Application config.
-    :type config: dict[str, object]
-    :param run: Sequencing run. Keys: ['run_dir', 'sequencing_run_id', 'instrument_type']
-    :type run: dict[str, str]
+    :param run: Sequencing run
     :return: None
     :rtype: None
     """
     base_analysis_outdir = config.analysis_output_dir
     base_analysis_work_dir = config.analysis_work_dir
-    
+
+    run_analysis_outdir = base_analysis_outdir / run.sequencing_run_id
+
+    os.makedirs(
+        run_analysis_outdir,
+        exist_ok=True
+    )
+
+    collect_run_dir_files(run, run_analysis_outdir)
+
     for pipeline in config.pipelines:
         log.debug({
             "event_type": "pre_analysis_starting",
@@ -167,5 +315,3 @@ def analyze_run(config: Config, run: Run):
         analysis_result = analysis.run_pipeline(config, pipeline, run)
 
         post_analysis.post_analysis(config, pipeline, run, analysis_result)
-
-        
