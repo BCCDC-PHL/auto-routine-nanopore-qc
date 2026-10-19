@@ -1,4 +1,5 @@
 import datetime
+import csv
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ import auto_routine_nanopore_qc.instrument as instrument
 import auto_routine_nanopore_qc.pre_analysis as pre_analysis
 import auto_routine_nanopore_qc.analysis as analysis
 import auto_routine_nanopore_qc.post_analysis as post_analysis
+import auto_routine_nanopore_qc.samplesheet as samplesheet
 
 from auto_routine_nanopore_qc.model import Config, CustomJSONEncoder, InstrumentType, Run
 
@@ -121,15 +123,49 @@ def analyze_run(config: Config, run: Run):
     Initiate an analysis on one directory of fastq files.
     
     :param config: Application config.
-    :type config: dict[str, object]
-    :param run: Sequencing run. Keys: ['run_dir', 'sequencing_run_id', 'instrument_type']
-    :type run: dict[str, str]
+    :param run: Sequencing run
     :return: None
     :rtype: None
     """
     base_analysis_outdir = config.analysis_output_dir
     base_analysis_work_dir = config.analysis_work_dir
-    
+
+    os.makedirs(
+        base_analysis_outdir / run.sequencing_run_id,
+        exist_ok=True
+    )
+
+    samplesheet_path = samplesheet.find_samplesheet(run)
+    if samplesheet_path is not None:
+        log.info({
+            "event_type": "samplesheet_found",
+            "sequencing_run_id": run.sequencing_run_id,
+            "samplesheet_path": samplesheet_path,
+        })
+        samplesheet_dst_path = os.path.abspath(os.path.join(
+            base_analysis_outdir,
+            run.sequencing_run_id,
+            "sample_sheet.original.csv",
+        ))
+        shutil.copy2(samplesheet_path, samplesheet_dst_path)
+        os.chmod(samplesheet_dst_path, 0o640)
+        parsed_samplesheet = samplesheet.parse_samplesheet(samplesheet_path)
+        parsed_samplesheet_dst_path = os.path.abspath(os.path.join(
+            base_analysis_outdir,
+            run.sequencing_run_id,
+            "sample_sheet.parsed.csv",
+        ))
+        parsed_samplesheet_fieldnames = [
+            'sample_id',
+            'barcode',
+            'project_id',
+        ]
+        with open(parsed_samplesheet_dst_path, 'w') as f:
+            writer = csv.DictWriter(f, fieldnames=parsed_samplesheet_fieldnames, extrasaction='ignore', quoting=csv.QUOTE_MINIMAL)
+            writer.writeheader()
+            for row in parsed_samplesheet:
+                writer.writerow(row)
+
     for pipeline in config.pipelines:
         log.debug({
             "event_type": "pre_analysis_starting",
