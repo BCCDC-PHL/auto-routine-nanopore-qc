@@ -121,6 +121,8 @@ def scan(config: Config) -> Iterator[Run]:
 
 def collect_run_dir_files(run: Run, run_analysis_outdir: Path):
     """
+    Collect several files from top-level sequencing run dir,
+    to make them available for routine-nanopore-qc-collector (and Nanopore QC site)
     """
     samplesheet_path = samplesheet.find_samplesheet(run)
     if samplesheet_path is not None:
